@@ -145,7 +145,7 @@ class CounterApp(tk.Tk):
 
     def __init__(self):
         super().__init__()
-        self.title("DE2-115 Coincidence Counter")
+        self.title("QIE Counter")
         self.geometry("1150x780")
 
         self.fpga = FPGAInterface()
@@ -274,12 +274,12 @@ class CounterApp(tk.Tk):
         ttk.Entry(frame, textvariable=self.snapshot_time_var, width=10).grid(
             row=1, column=1, columnspan=2, sticky='w', padx=2, pady=2)
 
-        ttk.Label(frame, text="Alpha (deg):").grid(row=2, column=0, sticky='w', padx=4, pady=2)
+        ttk.Label(frame, text="α (°):").grid(row=2, column=0, sticky='w', padx=4, pady=2)
         self.alpha_var = tk.StringVar(value="0.0")
         ttk.Entry(frame, textvariable=self.alpha_var, width=10).grid(
             row=2, column=1, columnspan=2, sticky='w', padx=2, pady=2)
 
-        ttk.Label(frame, text="Beta (deg):").grid(row=3, column=0, sticky='w', padx=4, pady=2)
+        ttk.Label(frame, text="β (°):").grid(row=3, column=0, sticky='w', padx=4, pady=2)
         self.beta_var = tk.StringVar(value="0.0")
         ttk.Entry(frame, textvariable=self.beta_var, width=10).grid(
             row=3, column=1, columnspan=2, sticky='w', padx=2, pady=2)
@@ -359,15 +359,15 @@ class CounterApp(tk.Tk):
 
         # sub-panel under the AB thermometer -- stays below the AB counter,
         # underneath its scale control
-        coinc_frame = ttk.LabelFrame(col_ab, text="Coincidence / Accidentals")
+        coinc_frame = ttk.LabelFrame(col_ab, text="Accidental Coincidences")
         coinc_frame.pack(fill='x', pady=(10, 0))
 
         ttk.Label(coinc_frame, text="Resolution (ns):").grid(row=0, column=0, sticky='w', padx=4, pady=4)
-        self.resolution_var = tk.StringVar(value="20")
+        self.resolution_var = tk.StringVar(value="5")
         ttk.Entry(coinc_frame, textvariable=self.resolution_var, width=10).grid(
             row=0, column=1, sticky='w', padx=4, pady=4)
 
-        ttk.Label(coinc_frame, text="Accidental rate (/s):").grid(row=1, column=0, sticky='w', padx=4, pady=4)
+        ttk.Label(coinc_frame, text="Accidental rate (counts/s):").grid(row=1, column=0, sticky='w', padx=4, pady=4)
         self.accidental_rate_var = tk.StringVar(value="0")
         ttk.Label(coinc_frame, textvariable=self.accidental_rate_var, font=('Consolas', 10, 'bold')).grid(
             row=1, column=1, sticky='w', padx=4, pady=4)
@@ -467,9 +467,7 @@ class CounterApp(tk.Tk):
         def worker():
             # FPGAInterface.open() never returns False -- on failure (e.g.
             # no device present / cable unplugged) it *raises* FPGAError.
-            # That exception was previously unhandled here, which silently
-            # killed the worker thread and left the Connect button disabled
-            # forever with no feedback. Now we catch it and surface a popup.
+            # We catch it and surface a popup.
             ok = False
             error = None
             try:
@@ -580,12 +578,6 @@ class CounterApp(tk.Tk):
         # IMPORTANT: this loop can end two ways -- (1) _stop_program() was
         # called from the main thread, which already flips the button text
         # itself, or (2) the loop broke out on its own here due to an error.
-        # Previously, case (2) never touched self.program_btn at all, so the
-        # button was left reading "Terminate Program" even though
-        # self.running had gone False -- the next click would silently call
-        # _start_program() again instead of doing what the stale label said.
-        # Scheduling this on the main thread via .after() fixes that for
-        # both cases (harmless if _stop_program already did it).
         self.running = False
         self.after(0, self._on_acquisition_loop_ended, error_occurred)
 
@@ -613,15 +605,8 @@ class CounterApp(tk.Tk):
         # from Poisson statistics: rate_a * rate_b * resolution_window.
         # accidentals: expected accidental coincidence COUNTS over this
         # particular `period` (accidental_rate * period).
-        #
-        # BUG FIX: this used to read
-        #   accidental_rate = calculate_accidental_coinc_rate if period else 0.0
-        # which assigned the *function object itself* (missing the call),
-        # so as soon as "Subtract accidental counts from AB" was ticked,
-        # `rate_ab_raw - accidental_rate` raised a TypeError (float - function)
-        # and silently killed the acquisition loop.
         accidental_rate = calculate_accidental_coinc_rate(rate_a, rate_b, resolution_ns) if period else 0.0
-        accidentals = accidental_rate * period if period else 0.0
+        accidentals = calculate_accidental_counts(rate_a, rate_b, resolution_ns, period) if period else 0.0
 
         rate_ab_display = rate_ab_raw
         if self.subtract_accidentals_var.get():
@@ -684,7 +669,7 @@ class CounterApp(tk.Tk):
             alpha = float(self.alpha_var.get())
             beta = float(self.beta_var.get())
         except ValueError:
-            messagebox.showerror("Invalid angle", "Alpha and Beta must be numbers.")
+            messagebox.showerror("Invalid angle", "α and β must be numbers.")
             return
 
         comment = self.comment_var.get()
@@ -711,6 +696,9 @@ class CounterApp(tk.Tk):
         rate_a = counts[self.COUNTER_A_IDX] / snap_time
         rate_b = counts[self.COUNTER_B_IDX] / snap_time
         rate_ab = counts[self.COUNTER_AB_IDX] / snap_time
+
+        # TODO: handle accidental count checkbox
+        ...
 
         # show the snapshot data on the main display
         self._refresh_display(counts, snap_time)
