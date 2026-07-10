@@ -208,7 +208,6 @@ if __name__ == "__main__":
     with FPGAInterface() as dev:
         print('Available devices:', dev.connected_devices)
         dev.open(dev.connected_devices[0])
-        print(dev.identify())
         print('Reading raw data:')
         print(dev.read_data())
         print('Acquiring counts (QIE specific):')
