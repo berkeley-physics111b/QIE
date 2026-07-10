@@ -327,7 +327,7 @@ class CounterApp(tk.Tk):
     # ------------------------------------------------------------------
     def _refresh_ports(self):
         try:
-            ports = list(self.fpga.rm.list_resources())
+            ports = self.fpga.connected_devices
         except Exception:
             ports = []
         self.port_combo['values'] = ports
@@ -456,8 +456,8 @@ class CounterApp(tk.Tk):
         except ValueError:
             resolution_ns = 0.0
 
-        accidentals = calculate_accidental_counts(rate_a, rate_b, resolution_ns, period)
-        accidental_rate = accidentals / period if period else 0.0
+        accidentals = calculate_accidental_counts(rate_a, rate_b, resolution_ns, period) if period else 0
+        accidental_rate = calculate_accidental_coinc_rate if period else 0.0
 
         rate_ab_display = rate_ab_raw
         if self.subtract_accidentals_var.get():
@@ -475,7 +475,7 @@ class CounterApp(tk.Tk):
         self.counter1_var.set(self._fmt(rate_b))
         self.counter5_var.set(self._fmt(rate_ab_raw))
 
-        self.accidentals_var.set(self._fmt(accidentals))
+        self.accidentals_var.set(self._fmt(accidental_rate))
 
     def _fmt(self, value):
         if self.round_display_var.get():

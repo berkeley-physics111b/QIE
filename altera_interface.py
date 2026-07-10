@@ -23,7 +23,7 @@ class FPGAInterface:
 
     def __init__(self):
         self._rm = pv.ResourceManager()
-        self.connected_devices = self._rm.list_resources()
+        self.connected_devices = list(self._rm.list_resources())
         self._fpga = None
 
     # ------------------------------------------------------------------
