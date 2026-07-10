@@ -133,7 +133,7 @@ class Thermometer(tk.Canvas):
 class CounterApp(tk.Tk):
 
     COUNTER_A_IDX = 0
-    COUNTER_B_IDX = 1
+    COUNTER_B_IDX = 2 # B' seems to be in use instead of B?
     COUNTER_AB_IDX = 5
 
     STATUS_COLORS = {
