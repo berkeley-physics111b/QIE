@@ -22,19 +22,20 @@ from tkinter import ttk, filedialog, messagebox
 from altera_interface import FPGAInterface
 
 # ----------------------------------------------------------------------
-# Placeholder physics functions - fill in real formulas as needed
+# Helper functions
 # ----------------------------------------------------------------------
+def calculate_accidental_coinc_rate(rate_a, rate_b, resolution_ns):
+    """
+    Compute the accidental coincidence rate of the detectors based on Poisson statistics.
+    """
+    return rate_a * rate_b * resolution_ns
+
 def calculate_accidental_counts(rate_a, rate_b, resolution_ns, update_period):
     """
-    PLACEHOLDER. Compute the number of accidental coincidence counts
-    expected over `update_period` seconds, given singles rates
-    rate_a / rate_b (counts/s) and a coincidence resolution window
-    of `resolution_ns` nanoseconds.
-
-    Replace this with the real formula.
+    Compute the number of accidental coincidence counts
+    expected over `update_period` seconds using calculate_accidental_coinc_rate.
     """
-    return 0.0
-
+    return calculate_accidental_coinc_rate(rate_a, rate_b, resolution_ns) * update_period
 
 # ----------------------------------------------------------------------
 # Thermometer-style indicator widget

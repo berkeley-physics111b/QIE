@@ -1,6 +1,12 @@
+import logging
 import time
 import pyvisa as pv
 import numpy as np
+
+logger = logging.getLogger(__name__)
+
+class FPGAError(Exception):
+    """Raised when FPGA Interface reports error."""
 
 
 class FPGAInterface:
@@ -13,18 +19,15 @@ class FPGAInterface:
     DATA_BITS = 8
     STOP_BITS = pv.constants.StopBits.one
     PARITY = pv.constants.Parity.none
-    INPUT_BUFFER_SIZE = 128          # bytes
-    RECV_BUFFER_MASK = 0xFFFF        # 16-bit receive buffer mask
     TERMINATION_CHAR = 0xFF
     TIMEOUT_MS = 10000                # 10 s
     POST_OPEN_WAIT_S = 0.1            # 100 ms settle time after opening
     SAMPLE_PERIOD_S = 0.1             # base sampling period for acquire_counts
 
     def __init__(self):
-        # change to list to port options, gui select...?
-        self.rm = pv.ResourceManager()
-        self.connected_devices = self.rm.list_resources()
-        self.fpga = None
+        self._rm = pv.ResourceManager()
+        self.connected_devices = self._rm.list_resources()
+        self._fpga = None
 
     # ------------------------------------------------------------------
     # Connection management
@@ -32,61 +35,61 @@ class FPGAInterface:
     def open(self, port: str) -> bool:
         """
         Open a serial connection to the FPGA board and configure it.
-        Returns True on success, False otherwise.
+        Returns True on success.
+
+        Raises
+        ------
+        FPGAError
+            If connection failed.
         """
         try:
-            self.fpga = self.rm.open_resource(port)
+            self._fpga = self._rm.open_resource(port)
 
             # --- serial line settings ---
-            self.fpga.baud_rate = self.BAUD_RATE
-            self.fpga.data_bits = self.DATA_BITS
-            self.fpga.stop_bits = self.STOP_BITS
-            self.fpga.parity = self.PARITY
+            self._fpga.baud_rate = self.BAUD_RATE
+            self._fpga.data_bits = self.DATA_BITS
+            self._fpga.stop_bits = self.STOP_BITS
+            self._fpga.parity = self.PARITY
 
             # --- termination / timeout ---
-            self.fpga.read_termination = chr(self.TERMINATION_CHAR)
-            self.fpga.timeout = self.TIMEOUT_MS  # ms
-
-            # --- I/O buffer sizing (NI-VISA viSetBuffer) ---
-            # Allocates read+write buffers of INPUT_BUFFER_SIZE bytes.
-            self.fpga.set_buffer(
-                pv.constants.VI_READ_BUF | pv.constants.VI_WRITE_BUF,
-                self.INPUT_BUFFER_SIZE,
-            )
-
-            # --- 16-bit receive buffer mask ---
-            # Governs how many pending-byte-count bits are tracked on the
-            # ASRL receive queue; adjust if your VISA backend rejects this.
-            self.fpga.set_visa_attribute(
-                pv.constants.VI_ATTR_ASRL_AVAIL_NUM,
-                self.RECV_BUFFER_MASK,
-            )
+            self._fpga.read_termination = chr(self.TERMINATION_CHAR)
+            self._fpga.timeout = self.TIMEOUT_MS  # ms
 
             # Let the board settle before the first read
             time.sleep(self.POST_OPEN_WAIT_S)
 
-            idn = self.fpga.query('*IDN?')
-            print(f"Connected to: {idn.strip()}")
+            idn = self._fpga.query('*IDN?')
+            logger.info('Connected to: %s', idn.strip())
             return True
 
         except Exception as e:
-            print('Failed to connect to DE2-115. Check cable connection.')
-            print(e)
-            self.fpga = None
-            return False
+            self._fpga = None
+            raise FPGAError(
+                f'Failed to connect to DE2-115. Check cable connection. Error: {e}'
+            ) from e
 
     def close(self) -> None:
         """Close the serial connection if one is open."""
-        if self.fpga is None:
-            print('No active connection to close.')
+        if self._fpga is None:
+            logger.info('No active connection to close.')
             return
         try:
-            self.fpga.close()
+            self._fpga.close()
         except Exception as e:
-            print('Error while closing connection to DE2-115.')
-            print(e)
+            raise FPGAError(f'Error while closing connection to DE2-115. Error: {e}') from e
         finally:
-            self.fpga = None
+            self._fpga = None
+
+    # ------------------------------------------------------------------
+    # Context manager
+    # ------------------------------------------------------------------
+
+    def __enter__(self) -> "FPGAInterface":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        self.close()
+        return False
 
     # ------------------------------------------------------------------
     # Low-level read
@@ -94,21 +97,23 @@ class FPGAInterface:
     def read_data(self):
         """
         Read a single 0xFF-terminated raw byte string from the FPGA.
-        Returns the raw bytes, or None on failure.
+        Returns the raw bytes.
+         
+        Raises
+        ------
+        FPGAError 
+            If no active conection, VISA read error, or unexpected error.
         """
-        if self.fpga is None:
-            print('Cannot read: no active connection.')
-            return None
+        if self._fpga is None:
+            raise FPGAError('Cannot read: no active connection.')
         try:
-            return self.fpga.read_raw()
+            return self._fpga.read_raw()
         except pv.errors.VisaIOError as e:
-            print('VISA read error while communicating with DE2-115.')
-            print(e)
-            return None
+            err = str(e)
+            raise FPGAError(f'VISA read error while communicating with DE2-115. Error: {err}') from e
         except Exception as e:
-            print('Unexpected error while reading from DE2-115.')
-            print(e)
-            return None
+            err = str(e)
+            raise FPGAError(f'Unexpected error while reading from DE2-115. Error: {err}') from e
 
     # ------------------------------------------------------------------
     # Byte string -> counts conversion
@@ -121,15 +126,20 @@ class FPGAInterface:
 
         Format: 8 counters x 5 bytes each (7 data bits/byte, MSB first),
         followed by a single 0xFF termination byte.
+
+        Raises
+        ------
+        FPGAError
+            If missing termination byte or wrong number of bytes received.
         """
         data = np.frombuffer(raw, dtype=np.uint8)
 
         if data.size == 0 or data[-1] != 0xFF:
-            raise ValueError("Missing 0xFF termination byte")
+            raise FPGAError("Missing 0xFF termination byte")
         data = data[:-1]  # drop terminator
 
         if data.size != 40:  # 8 counters * 5 bytes
-            raise ValueError(f"Expected 40 data bytes, got {data.size}")
+            raise FPGAError(f"Expected 40 data bytes, got {data.size}")
 
         # reshape into 8 rows (counters) x 5 columns (bytes, MSB first)
         chunks = data.reshape(8, 5).astype(np.uint32)
@@ -159,18 +169,17 @@ class FPGAInterface:
 
         Raises
         ------
-        RuntimeError
-            If there is no open connection, or a read/conversion fails.
-        ValueError
-            If update_period is not a positive multiple of 0.1 s.
+        FPGAError
+            If there is no open connection, a read/conversion fails, or
+            update_period is not a positive multiple of 0.1 s.
         """
-        if self.fpga is None:
-            raise RuntimeError('No active connection to DE2-115.')
+        if self._fpga is None:
+            raise FPGAError('No active connection to DE2-115.')
 
         n_reads = round(update_period / self.SAMPLE_PERIOD_S)
 
         if n_reads <= 0 or not np.isclose(n_reads * self.SAMPLE_PERIOD_S, update_period):
-            raise ValueError(
+            raise FPGAError(
                 f'update_period must be a positive multiple of '
                 f'{self.SAMPLE_PERIOD_S} s, got {update_period}'
             )
@@ -180,18 +189,28 @@ class FPGAInterface:
         for i in range(n_reads):
             raw = self.read_data()
             if raw is None:
-                raise RuntimeError(
+                raise FPGAError(
                     f'Failed to read data on sample {i + 1}/{n_reads}'
                 )
 
             try:
                 counts = self.altera_string_to_counts(raw)
-            except ValueError as e:
-                raise RuntimeError(
+            except FPGAError as e:
+                raise FPGAError(
                     f'Malformed data on sample {i + 1}/{n_reads}: {e}'
-                )
+                ) from e
 
             total_counts += counts
             time.sleep(self.SAMPLE_PERIOD_S)
 
         return total_counts.astype(np.uint32)
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    with FPGAInterface() as dev:
+        print('Available devices:', dev.connected_devices)
+        dev.open(dev.connected_devices[0])
+        print('Reading raw data:')
+        print(dev.read_data())
+        print('Acquiring counts (QIE specific):')
+        print(dev.acquire_counts(1.0))  # 1 s acquisition window
