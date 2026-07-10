@@ -41,6 +41,7 @@ class FPGAInterface:
         """
         try:
             self._fpga = self._rm.open_resource(port)
+            self._fpga.clear()
 
             # --- serial line settings ---
             self._fpga.baud_rate = self.BAUD_RATE
@@ -74,11 +75,6 @@ class FPGAInterface:
         finally:
             self._fpga = None
     
-    def identify(self):
-        """Not sure if this even works, but test identify function."""
-        idn = self._fpga.query('*IDN?')
-        return idn.strip()
-
     # ------------------------------------------------------------------
     # Context manager
     # ------------------------------------------------------------------
