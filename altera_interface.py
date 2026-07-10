@@ -1,9 +1,6 @@
-import logging
 import time
 import pyvisa as pv
 import numpy as np
-
-logger = logging.getLogger(__name__)
 
 class FPGAError(Exception):
     """Raised when FPGA Interface reports error."""
@@ -58,8 +55,6 @@ class FPGAInterface:
             # Let the board settle before the first read
             time.sleep(self.POST_OPEN_WAIT_S)
 
-            idn = self._fpga.query('*IDN?')
-            logger.info('Connected to: %s', idn.strip())
             return True
 
         except Exception as e:
@@ -71,7 +66,6 @@ class FPGAInterface:
     def close(self) -> None:
         """Close the serial connection if one is open."""
         if self._fpga is None:
-            logger.info('No active connection to close.')
             return
         try:
             self._fpga.close()
@@ -79,6 +73,11 @@ class FPGAInterface:
             raise FPGAError(f'Error while closing connection to DE2-115. Error: {e}') from e
         finally:
             self._fpga = None
+    
+    def identify(self):
+        """Not sure if this even works, but test identify function."""
+        idn = self._fpga.query('*IDN?')
+        return idn.strip()
 
     # ------------------------------------------------------------------
     # Context manager
@@ -206,10 +205,10 @@ class FPGAInterface:
         return total_counts.astype(np.uint32)
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     with FPGAInterface() as dev:
         print('Available devices:', dev.connected_devices)
         dev.open(dev.connected_devices[0])
+        print(dev.identify())
         print('Reading raw data:')
         print(dev.read_data())
         print('Acquiring counts (QIE specific):')
