@@ -25,6 +25,7 @@ class FPGAInterface:
         self._rm = pv.ResourceManager()
         self.connected_devices = list(self._rm.list_resources())
         self._fpga = None
+        self.BYTES_TO_READ = 41
 
     # ------------------------------------------------------------------
     # Connection management
@@ -91,7 +92,7 @@ class FPGAInterface:
     # ------------------------------------------------------------------
     def read_data(self):
         """
-        Read a single 0xFF-terminated raw byte string from the FPGA.
+        Read a single 0xFF-terminated raw byte string (41 bytes) from the FPGA.
         Returns the raw bytes.
          
         Raises
@@ -102,7 +103,7 @@ class FPGAInterface:
         if self._fpga is None:
             raise FPGAError('Cannot read: no active connection.')
         try:
-            return self._fpga.read_raw()
+            return self._fpga.read_bytes(self.BYTES_TO_READ)
         except pv.errors.VisaIOError as e:
             err = str(e)
             raise FPGAError(f'VISA read error while communicating with DE2-115. Error: {err}') from e

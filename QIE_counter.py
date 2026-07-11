@@ -132,9 +132,10 @@ class Thermometer(tk.Canvas):
 # ----------------------------------------------------------------------
 class CounterApp(tk.Tk):
 
+    # Counter order: A, B, A', B', AB, A'B, AB', A'B'
     COUNTER_A_IDX = 0
-    COUNTER_B_IDX = 2 # B' seems to be in use instead of B?
-    COUNTER_AB_IDX = 5
+    COUNTER_B_IDX = 3 # B' seems to be in use instead of B?
+    COUNTER_AB_IDX = 6 # So therefore want AB' instead of AB counter
 
     STATUS_COLORS = {
         'Initializing': '#555555',
