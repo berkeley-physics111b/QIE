@@ -103,10 +103,14 @@ class FPGAInterface:
         if self._fpga is None:
             raise FPGAError('Cannot read: no active connection.')
         try:
-            return self._fpga.read_bytes(self.BYTES_TO_READ)
+            raw = self._fpga.read_bytes(self.BYTES_TO_READ, break_on_termchar=True)
+            if len(raw) != self.BYTES_TO_READ or raw[-1] != self.TERMINATION_CHAR:
+                # Short/misaligned read (spurious or real early term)
+                # Discard and read the next full frame instead of propagating garbage.
+                raw = self._fpga.read_bytes(self.BYTES_TO_READ, break_on_termchar=True)
+            return raw
         except pv.errors.VisaIOError as e:
-            err = str(e)
-            raise FPGAError(f'VISA read error while communicating with DE2-115. Error: {err}') from e
+            raise FPGAError(f'VISA read error while communicating with DE2-115. Error: {e}') from e
         except Exception as e:
             err = str(e)
             raise FPGAError(f'Unexpected error while reading from DE2-115. Error: {err}') from e
